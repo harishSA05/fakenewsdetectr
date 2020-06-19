@@ -284,31 +284,58 @@ print('Seen fake data prediction {} '.format(pred[0]))
 
 
 from flask import Flask,request,jsonify
-app = Flask(__name__)
-
+from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS, cross_origin
+from textblob import TextBlob
+import nltk
+import speech_recognition as sr
 import spacy
 from collections import Counter
 from string import punctuation
+from GoogleNews import GoogleNews
+googlenews = GoogleNews()
 import subprocess
 import os
-import sys
-base_dir = os.path.abspath(os.path.dirname('__file__'))
-print(base_dir)
+nlp = spacy.load("en_core_web_sm")
 import requests
+app = Flask(__name__)
+base_dir = os.path.abspath(os.path.dirname(__file__))
+import hashlib
+import moviepy.editor as mp
+# jwt = JWT()
+app.config['SECRET_KEY']="raand"
 from datetime import datetime,timedelta
-import json
 from pydub import AudioSegment
 import pydub
 from PIL import Image
 import pytesseract
-import re 
-from textblob import TextBlob
-import speech_recognition as sr
+import json
 
-CORS(app)     
-app.config["IMAGE_UPLOADS"] = os.path.join(base_dir+"/uploads/")
-app.config["AUDIO_UPLOADS"] = os.path.join(base_dir+"/uploads/")
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgres://postgres:password@localhost:5432/fakenews'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+#create a model
+class Users(db.Model):
+    __tablename__ = 'users'
+    id=db.Column(db.Integer,primary_key=True)
+    username = db.Column(db.String)
+    phoneno = db.Column(db.String)
+    email=db.Column(db.String)
+    password=db.Column(db.String)
+    status=db.Column(db.Integer)
+
+    def __init__(self,email,password,phoneno,username,status):
+        self.email = email
+        self.password = password
+        self.status = status
+        self.username = username
+        self.phoneno = phoneno
+
+
+CORS(app)       
+app.config["IMAGE_UPLOADS"] = os.path.join(base_dir+"\\uploads\\")
+app.config["AUDIO_UPLOADS"] = os.path.join(base_dir+"\\uploads\\")
 
 
 print(app.config["IMAGE_UPLOADS"])
@@ -371,11 +398,44 @@ def gettextfromvoice():
 
 @app.route('/login',methods=['POST'])
 def login():
-    return jsonify({"status":"success","username":user.username}) 
-        
+    data = request.get_json()
+    print(data)
+    email = data['email']
+    password = data['password']
+    print(email,password)
+    print(hashlib.sha256(password.encode("utf-8")).hexdigest() == "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8")
+
+    try:
+        user = Users.query.filter_by(email=email).first()
+        print(user)
+        if user and user.password == hashlib.sha256(data["password"].encode("utf-8")).hexdigest():
+            return jsonify({"status":"success","username":user.username}) 
+        else:
+           return jsonify({"status":"failed","message":"Incorrect password!"}) 
+    except:
+        print("exception")
+        return jsonify({"status":"failed","message":"login Failed!"})
+
+
 
 @app.route('/signup',methods=['POST'])
 def signup():
+    data = request.get_json()
+    print(data)
+    email = data['email']
+    password = data['password']
+    username = data['name']
+    phoneno = data['mobile']
+    print(email,password,username,phoneno)
+    data = db.session.query(Users).filter(Users.email == email).first()
+    if data and data.email == email: 
+        return jsonify({
+                "status":"failed",
+              "message": "email exists!"
+         })
+    user = Users(email, hashlib.sha256(password.encode("utf-8")).hexdigest(),phoneno,username,1)
+    db.session.add(user)
+    db.session.commit()
     return jsonify({
             "status":"success",
             "message": "User  created!",
